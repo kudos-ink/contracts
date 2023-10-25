@@ -7,8 +7,12 @@ mod asset_reward {
 
     /// Type alias for hashes.
     pub type HashValue = [u8; 32];
+    /// Type alias for ECDSA signatures.
+    pub type SignatureValue = [u8; 65];
     /// Type alias for the contract's `Result` type.
     pub type Result<T> = core::result::Result<T, Error>;
+    /// Type alias for the workflow run message.
+    pub type WorkflowRunMessage = (HashValue, u64);
 
     /// A Workflow is represented by:
     /// - the public address of the account transferring the reward.
@@ -41,6 +45,9 @@ mod asset_reward {
     pub struct AssetReward {
         // The registered workflow.
         workflow: Workflow,
+
+        // The public signer account that signs the hash of the `WorkflowRunMessage`, a tuple composed of the workflow file hash and a specific workflow run id.
+        signer: AccountId,
 
         // The contribution reward amount
         reward: Balance,
@@ -77,15 +84,18 @@ mod asset_reward {
         CallerIsNotContributor,
         /// Returned when attempting to claim an already claimed reward.
         AlreadyClaimed,
+        /// Returned when a not trusted signer is used to sign the workflow run message.
+        InvalidSigner,
     }
 
     impl AssetReward {
         /// Constructor that initializes an asset reward for a given workflow
         #[ink(constructor)]
-        pub fn new(workflow: Workflow, reward: Balance) -> Self {
+        pub fn new(workflow: Workflow, reward: Balance, signer: AccountId) -> Self {
             Self {
                 workflow,
                 reward,
+                signer,
                 used_run_ids: Mapping::default(),
                 contributions: Mapping::default(),
                 identities: Mapping::default(),
@@ -104,7 +114,11 @@ mod asset_reward {
         /// 2. The workflow `run_id` must not have been used previously.
         /// 3. The signature has to be valid.
         #[ink(message)]
-        pub fn verify_workflow_run(&mut self, run_id: u64, signature: HashValue) -> Result<bool> {
+        pub fn verify_workflow_run(
+            &mut self,
+            run_id: u64,
+            signature: SignatureValue,
+        ) -> Result<bool> {
             if self.env().caller() != self.workflow.account {
                 return Err(Error::CallerIsNotWorkflowOwner);
             }
@@ -113,12 +127,13 @@ mod asset_reward {
                 return Err(Error::RunIdAlreadyUsed);
             }
 
-            // bytes32 message = prefixed(keccak256(abi.encodePacked(githubWorkflows[_name].fileHash, _runId)));
-            // address recovered = recoverSigner(message, _signature);
-
-            // require(recovered == githubWorkflowSigner, "Invalid signature.");
-
-            Ok(true)
+            let message: WorkflowRunMessage = (self.workflow.hash, run_id);
+            let message_hash = AssetReward::hash_workflow_run(&message);
+            match AssetReward::recover_signer(&signature, &message_hash) {
+                // TODO: Ok(recovered_signer) => Ok(recovered_signer == self.signer),
+                Ok(_) => Ok(true),
+                Err(_) => Err(Error::InvalidSigner),
+            }
         }
 
         /// Register an aspiring contributor.
@@ -150,11 +165,10 @@ mod asset_reward {
             &mut self,
             contribution_id: u64,
             contributor_identity: HashValue,
-            _run_id: u64,
-            _signature: HashValue,
+            run_id: u64,
+            signature: SignatureValue,
         ) -> Result<()> {
-            // TODO
-            // verifyWorkflowRun(_runId, "withdraw", _signature);
+            let _ = self.verify_workflow_run(run_id, signature);
 
             if self.contribution_is_known(contribution_id) {
                 return Err(Error::ContributionAlreadyApproved);
@@ -225,10 +239,28 @@ mod asset_reward {
             self.used_run_ids.get(run_id).is_some()
         }
 
-        pub fn hash_sha_256(input: &[u8]) -> HashValue {
+        /// A helper function to hash bytes (e.g. identities or workflow file sha)
+        pub fn hash(input: &[u8]) -> HashValue {
+            let mut hash_value = <Sha2x256 as HashOutput>::Type::default();
+            ink::env::hash_bytes::<Sha2x256>(input, &mut hash_value);
+            hash_value
+        }
+
+        /// A helper function to hash a workflow run message:
+        /// A tuple composed of the workflow file sha and the workflow run id.
+        pub fn hash_workflow_run(input: &WorkflowRunMessage) -> HashValue {
             let mut hash_value = <Sha2x256 as HashOutput>::Type::default();
             ink::env::hash_encoded::<Sha2x256, _>(&input, &mut hash_value);
             hash_value
+        }
+
+        /// A helper function to recover the signer from a ECDSA signature from a given message.
+        pub fn recover_signer(signature: &SignatureValue, message: &HashValue) -> Result<[u8; 33]> {
+            let mut output: [u8; 33] = [0; 33];
+            match ink::env::ecdsa_recover(&signature, &message, &mut output) {
+                Ok(_) => Ok(output),
+                Err(_) => Err(Error::InvalidSigner),
+            }
         }
     }
 
@@ -254,7 +286,7 @@ mod asset_reward {
             let accounts = default_accounts();
             let mut contract = create_contract(10u128, 1u128);
             let contribution_id = 1u64;
-            let identity = AssetReward::hash_sha_256("bobby".as_bytes());
+            let identity = AssetReward::hash("bobby".as_bytes());
             let contributor = accounts.bob;
             set_next_caller(accounts.bob);
             assert_eq!(
@@ -263,7 +295,7 @@ mod asset_reward {
             );
             set_next_caller(accounts.alice);
             assert_eq!(
-                contract.approve(contribution_id, identity, 0, [0; 32]),
+                contract.approve(contribution_id, identity, 0, [0; 65]),
                 Ok(())
             );
             let bob_initial_balance = get_balance(accounts.bob);
@@ -309,6 +341,7 @@ mod asset_reward {
                     hash: [0; 32],
                 },
                 reward,
+                accounts.frank,
             )
         }
     }
