@@ -2,68 +2,58 @@
 
 #[ink::contract]
 mod asset_reward {
+    pub type HashValue = [u8; 32];
 
-    /// Defines the storage of your contract.
-    /// Add new fields to the below struct in order
-    /// to add new static storage fields to your contract.
+    /// A Workflow is represented by:
+    /// - the public address of the account transferring the reward.
+    /// - the hash of the workflow file.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, scale::Decode, scale::Encode)]
+    #[cfg_attr(feature = "std", derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo))]
+    pub struct Workflow {
+        account: AccountId,
+        hash: HashValue
+    }
+
     #[ink(storage)]
     pub struct AssetReward {
-        /// Stores a single `bool` value on the storage.
-        value: bool,
+        // The registered workflow.
+	    workflow: Workflow,
+
+        // The contribution reward amount
+	    reward: Balance,
     }
 
     impl AssetReward {
-        /// Constructor that initializes the `bool` value to the given `init_value`.
+        /// Constructor that initializes an asset reward for a given workflow
         #[ink(constructor)]
-        pub fn new(init_value: bool) -> Self {
-            Self { value: init_value }
+        pub fn new(workflow: Workflow, reward: Balance) -> Self {
+            Self {
+                workflow,
+                reward
+          }
         }
-
-        /// Constructor that initializes the `bool` value to `false`.
-        ///
-        /// Constructors can delegate to other constructors.
-        #[ink(constructor)]
-        pub fn default() -> Self {
-            Self::new(Default::default())
-        }
-
-        /// A message that can be called on instantiated contracts.
-        /// This one flips the value of the stored `bool` from `true`
-        /// to `false` and vice versa.
+        /// Simply returns the current workflow.
         #[ink(message)]
-        pub fn flip(&mut self) {
-            self.value = !self.value;
-        }
-
-        /// Simply returns the current value of our `bool`.
-        #[ink(message)]
-        pub fn get(&self) -> bool {
-            self.value
+        pub fn get_reward(&self) -> Balance {
+            self.reward
         }
     }
 
-    /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
-    /// module and test functions are marked with a `#[test]` attribute.
-    /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
-        /// We test if the default constructor does its job.
-        #[ink::test]
-        fn default_works() {
-            let asset_reward = AssetReward::default();
-            assert_eq!(asset_reward.get(), false);
+        fn default_accounts() -> ink::env::test::DefaultAccounts<ink::env::DefaultEnvironment> {
+            ink::env::test::default_accounts::<Environment>()
         }
 
-        /// We test a simple use case of our contract.
+        /// We test if the constructor does its job.
         #[ink::test]
-        fn it_works() {
-            let mut asset_reward = AssetReward::new(false);
-            assert_eq!(asset_reward.get(), false);
-            asset_reward.flip();
-            assert_eq!(asset_reward.get(), true);
+        fn new_works() {
+            let default_accounts = default_accounts();
+            let asset_reward = AssetReward::new(Workflow { account: default_accounts.alice, hash: [0; 32] }, 1u128);
+            assert_eq!(asset_reward.get_reward(), 1u128);
         }
     }
 }
