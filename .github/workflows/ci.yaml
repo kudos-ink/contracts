@@ -25,16 +25,16 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: $PATH
+          args: $ASSET_REWARD
 
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: $PATH
+          args: $ASSET_REWARD
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: $PATH
+          args: $ASSET_REWARD
