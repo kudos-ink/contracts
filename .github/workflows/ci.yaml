@@ -1,0 +1,41 @@
+name: Build Contract
+
+on:
+  push:
+    branches: ['**']
+
+env:
+  PATH: --manifest-path=src/asset_reward/Cargo.toml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+
+      - name: Lint
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: $PATH
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: $PATH
+
+      - name: Test
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: $PATH
