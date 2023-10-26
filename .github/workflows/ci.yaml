@@ -5,7 +5,7 @@ on:
     branches: ['**']
 
 env:
-  PATH: --manifest-path=src/asset_reward/Cargo.toml
+  PATH: "--manifest-path=src/asset_reward/Cargo.toml"
 
 jobs:
   build:
@@ -13,14 +13,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
-
 
       - name: Lint
         uses: actions-rs/cargo@v1
