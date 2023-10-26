@@ -1,0 +1,34 @@
+name: Build Contract
+
+on:
+  push:
+    branches: ['**']
+
+defaults:
+  run:
+    working-directory: src/asset_reward
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install cargo-contract
+        run: |
+          cargo install cargo-contract
+        env:
+          CARGO_HOME: ${{ env.HOME }}/.cargo
+          PATH: ${{ env.HOME }}/.cargo/bin:${{ env.PATH }}
+
+      - name: Build Contract
+        run: |
+          cargo contract build
