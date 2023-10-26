@@ -25,7 +25,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: ${{ env.ASSET_REWARD }}
+          args: ${{ env.ASSET_REWARD }} -- -D warnings
 
       - name: Build
         uses: actions-rs/cargo@v1
