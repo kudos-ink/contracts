@@ -5,7 +5,7 @@ on:
     branches: ['**']
 
 env:
-  PATH: "--manifest-path=src/asset_reward/Cargo.toml"
+  ASSET_REWARD: "--manifest-path=src/asset_reward/Cargo.toml"
 
 jobs:
   build:
