@@ -25,16 +25,16 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: $ASSET_REWARD
+          args: ${{ vars.ASSET_REWARD }}
 
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: $ASSET_REWARD
+          args: ${{ vars.ASSET_REWARD }}
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: $ASSET_REWARD
+          args: ${{ vars.ASSET_REWARD }}
