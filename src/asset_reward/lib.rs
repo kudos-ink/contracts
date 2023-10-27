@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), no_std, no_main)]
 
 #[ink::contract]
 mod asset_reward {
@@ -257,7 +257,7 @@ mod asset_reward {
         /// A helper function to recover the signer from a ECDSA signature from a given message.
         pub fn recover_signer(signature: &SignatureValue, message: &HashValue) -> Result<[u8; 33]> {
             let mut output: [u8; 33] = [0; 33];
-            match ink::env::ecdsa_recover(&signature, &message, &mut output) {
+            match ink::env::ecdsa_recover(signature, message, &mut output) {
                 Ok(_) => Ok(output),
                 Err(_) => Err(Error::InvalidSigner),
             }
