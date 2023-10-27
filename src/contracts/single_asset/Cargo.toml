@@ -1,20 +1,22 @@
 [package]
-name = "asset_reward"
+name = "single_asset_reward"
 version = "0.1.0"
-authors = ["[your_name] <[your_email]>"]
+authors = ["Igor Papandinas", "Leandro Palazzolo"]
 edition = "2021"
 
 [dependencies]
-ink = { version = "4.2.1", default-features = false }
-
+ink = { version = "4.3.0", default-features = false }
 scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
 scale-info = { version = "2.6", default-features = false, features = ["derive"], optional = true }
 
 # OpenBrush dependency
 openbrush = { git = "https://github.com/Brushfam/openbrush-contracts", version = "4.0.0-beta", default-features = false, features = ["ownable"] }
 
+# These dependencies
+kudos_ink = { path = "../..", default-features = false }
+
 [lib]
-name = "asset_reward"
+name = "single_asset_reward"
 path = "lib.rs"
 
 [features]
@@ -25,5 +27,6 @@ std = [
     "scale-info/std",
     # OpenBrush dependency
     "openbrush/std",
+    "kudos_ink/std",
 ]
 ink-as-dependency = []

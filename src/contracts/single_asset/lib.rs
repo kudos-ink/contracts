@@ -2,14 +2,12 @@
 
 #[openbrush::implementation(Ownable)]
 #[openbrush::contract]
-pub mod asset_reward {
+pub mod single_asset_reward {
+    use kudos_ink::traits::workflow::{*, WorkflowError};
     use openbrush::{contracts::traits::ownable::OwnableError, modifiers, traits::Storage};
 
     use ink::env::hash::{HashOutput, Sha2x256};
     use ink::storage::Mapping;
-
-    /// Type alias for hashes.
-    pub type HashValue = [u8; 32];
 
     /// A Contribution is represented by:
     /// - a unique id.
@@ -27,7 +25,7 @@ pub mod asset_reward {
 
     #[ink(storage)]
     #[derive(Default, Storage)]
-    pub struct AssetReward {
+    pub struct SingleAssetReward {
         #[storage_field]
         ownable: ownable::Data,
 
@@ -44,67 +42,21 @@ pub mod asset_reward {
         identities: Mapping<HashValue, AccountId>, // HashValue refers to the contributo id (e.g. github ID)
     }
 
-    /// Errors that can occur upon calling this contract.
-    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
-    #[cfg_attr(feature = "std", derive(::scale_info::TypeInfo))]
-    pub enum Error {
-        OwnableError(OwnableError),
-        /// An aspiring contributor identity is already registered in the DB.
-        IdentityAlreadyRegistered,
-        /// Contribution is already approved in the DB.
-        ContributionAlreadyApproved,
-        // Run id is already used in the DB.
-        RunIdAlreadyUsed,
-        /// Contributor identity is not registered in the DB.
-        UnknownContributor,
-        /// Contribution is not in the DB.
-        UnknownContribution,
-        /// Attempted reward payment to a contributor failed.
-        PaymentFailed,
-        /// Returned if caller is not the workflow `owner` while required to.
-        CallerIsNotWorkflowOwner,
-        /// Returned if caller is not the `contributor` while required to.
-        CallerIsNotContributor,
-        /// Returned when attempting to claim an already claimed reward.
-        AlreadyClaimed,
-        /// Returned when a not trusted signer is used to sign the workflow run message.
-        InvalidSigner,
-    }
-
-    impl From<OwnableError> for Error {
-        fn from(error: OwnableError) -> Self {
-            Error::OwnableError(error)
-        }
-    }
-
-    impl AssetReward {
-        /// Constructor that initializes an asset reward for a given workflow
-        #[ink(constructor)]
-        pub fn new(workflow: HashValue, reward: Balance) -> Self {
-            let mut instance = Self::default();
-            let caller = instance.env().caller();
-            ownable::Internal::_init_with_owner(&mut instance, caller);
-            Self {
-                workflow,
-                reward,
-                ..instance
-            }
-        }
-
-        /// Register an aspiring contributor.
+    impl Workflow for SingleAssetReward {
+/// Register an aspiring contributor.
         ///
         /// Constraint(s):
         /// 1. The `identity` id should not already be registered.
         ///
         /// A `Registered` event is emitted.
         #[ink(message)]
-        pub fn register_identity(
+        fn register_identity(
             &mut self,
             account: AccountId,
             identity: HashValue,
-        ) -> Result<(), Error> {
+        ) -> Result<(), WorkflowError> {
             if self.identity_is_known(identity) {
-                return Err(Error::IdentityAlreadyRegistered);
+                return Err(WorkflowError::IdentityAlreadyRegistered);
             }
 
             self.identities.insert(identity, &account);
@@ -120,18 +72,18 @@ pub mod asset_reward {
         /// An `Approval` event is emitted.
         #[ink(message)]
         #[modifiers(only_owner)]
-        pub fn approve(
+        fn approve(
             &mut self,
             contribution_id: u64,
             contributor_identity: HashValue,
-        ) -> Result<(), Error> {
+        ) -> Result<(), WorkflowError> {
             if self.contribution_is_known(contribution_id) {
-                return Err(Error::ContributionAlreadyApproved);
+                return Err(WorkflowError::ContributionAlreadyApproved);
             }
 
             let maybe_contributor = self.identities.get(contributor_identity);
             if maybe_contributor.is_none() {
-                return Err(Error::UnknownContributor);
+                return Err(WorkflowError::UnknownContributor);
             }
 
             let contribution = Contribution {
@@ -152,24 +104,52 @@ pub mod asset_reward {
         ///
         /// A `Claim` event is emitted.
         #[ink(message)]
-        pub fn claim(&self, contribution_id: u64) -> Result<bool, Error> {
+        fn claim(&self, contribution_id: u64) -> Result<bool, WorkflowError> {
+            self.claim_reward(contribution_id)
+        }
+    }
+
+    impl SingleAssetReward {
+        /// Constructor that initializes an asset reward for a given workflow
+        #[ink(constructor)]
+        pub fn new(workflow: HashValue, reward: Balance) -> Self {
+            let mut instance = Self::default();
+            let caller = instance.env().caller();
+            ownable::Internal::_init_with_owner(&mut instance, caller);
+            Self {
+                workflow,
+                reward,
+                ..instance
+            }
+        }
+
+        /// Claim reward for a contributor.
+        ///
+        /// Constraint(s):
+        /// 1. The `contribution_id` must be mapped to an existing approved contribution in `contributions`.
+        /// 2. The caller has to be the contributor of the approved contribution.
+        /// 3. The claim must be available (marked as false in the claims mapping).
+        ///
+        /// A `Claim` event is emitted.
+        #[ink(message)]
+        pub fn claim_reward(&self, contribution_id: u64) -> Result<bool, WorkflowError> {
             if !self.contribution_is_known(contribution_id) {
-                return Err(Error::UnknownContribution);
+                return Err(WorkflowError::UnknownContribution);
             }
 
             let contribution = self.contributions.get(contribution_id).unwrap();
             let contributor = contribution.contributor;
-            if self.env().caller() != contributor {
-                return Err(Error::CallerIsNotContributor);
+            if Self::env().caller() != contributor {
+                return Err(WorkflowError::CallerIsNotContributor);
             }
 
             if contribution.is_claimed {
-                return Err(Error::AlreadyClaimed);
+                return Err(WorkflowError::AlreadyClaimed);
             }
 
             match self.env().transfer(contributor, self.reward) {
                 Ok(_) => Ok(true),
-                Err(_) => Err(Error::PaymentFailed),
+                Err(_) => Err(WorkflowError::PaymentFailed),
             }
         }
 
@@ -219,7 +199,7 @@ pub mod asset_reward {
             let accounts = default_accounts();
             let mut contract = create_contract(10u128, 1u128);
             let contribution_id = 1u64;
-            let identity = AssetReward::hash("bobby".as_bytes());
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
             let contributor = accounts.bob;
             set_next_caller(accounts.bob);
             assert_eq!(
@@ -258,14 +238,14 @@ pub mod asset_reward {
                 .expect("Cannot get account balance")
         }
 
-        /// Creates a new instance of `AssetReward` with `initial_balance`.
+        /// Creates a new instance of `SingleAssetReward` with `initial_balance`.
         ///
         /// Returns the `contract_instance`.
-        fn create_contract(initial_balance: Balance, reward: Balance) -> AssetReward {
+        fn create_contract(initial_balance: Balance, reward: Balance) -> SingleAssetReward {
             let accounts = default_accounts();
             set_next_caller(accounts.alice);
             set_balance(contract_id(), initial_balance);
-            AssetReward::new([0; 32], reward)
+            SingleAssetReward::new([0; 32], reward)
         }
     }
 }
