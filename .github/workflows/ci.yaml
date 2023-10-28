@@ -5,7 +5,7 @@ on:
     branches: ['**']
 
 env:
-  ASSET_REWARD: "--manifest-path=src/asset_reward/Cargo.toml"
+  SINGLE_ASSET_REWARD: "--manifest-path=src/single_asset_reward/Cargo.toml"
 
 jobs:
   build:
@@ -25,16 +25,16 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: ${{ env.ASSET_REWARD }} -- -D warnings
+          args: ${{ env.SINGLE_ASSET_REWARD }} -- -D warnings
 
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: ${{ env.ASSET_REWARD }}
+          args: ${{ env.SINGLE_ASSET_REWARD }}
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: ${{ env.ASSET_REWARD }}
+          args: ${{ env.SINGLE_ASSET_REWARD }}
