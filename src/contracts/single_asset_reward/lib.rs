@@ -197,7 +197,7 @@ pub mod single_asset_reward {
             let contribution = self.ensure_can_claim(contribution_id)?;
 
             // Perform the reward claim
-            if let Err(_) = self.env().transfer(contribution.contributor, self.reward) {
+            if self.env().transfer(contribution.contributor, self.reward).is_err() {
                 return Err(WorkflowError::PaymentFailed);
             }
 
