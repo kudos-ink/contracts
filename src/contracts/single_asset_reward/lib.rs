@@ -194,9 +194,7 @@ pub mod single_asset_reward {
         /// Claim reward for a given `contribution_id`.
         #[ink(message)]
         pub fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
-            self.ensure_can_claim(contribution_id)?;
-
-            let contribution = self.contribution.unwrap(); // ensure in `ensure_can_claim`
+            let contribution = self.ensure_can_claim(contribution_id)?;
 
             // Perform the reward claim
             if let Err(_) = self.env().transfer(contribution.contributor, self.reward) {
@@ -231,7 +229,7 @@ pub mod single_asset_reward {
         }
 
         /// A helper function to ensure a contributor can claim the reward.
-        pub fn ensure_can_claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
+        pub fn ensure_can_claim(&self, contribution_id: u64) -> Result<Contribution, WorkflowError> {
             // Check if a contribution is set
             let contribution = match &self.contribution {
                 Some(contribution) => contribution,
@@ -253,7 +251,7 @@ pub mod single_asset_reward {
                 return Err(WorkflowError::AlreadyClaimed);
             }
 
-            Ok(())
+            Ok(*contribution)
         }
 
         /// A helper function to detect whether an aspiring contributor identity has been registered in the storage.
