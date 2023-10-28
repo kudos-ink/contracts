@@ -229,7 +229,10 @@ pub mod single_asset_reward {
         }
 
         /// A helper function to ensure a contributor can claim the reward.
-        pub fn ensure_can_claim(&self, contribution_id: u64) -> Result<Contribution, WorkflowError> {
+        pub fn ensure_can_claim(
+            &self,
+            contribution_id: u64,
+        ) -> Result<Contribution, WorkflowError> {
             // Check if a contribution is set
             let contribution = match &self.contribution {
                 Some(contribution) => contribution,
