@@ -3,7 +3,7 @@
 #[openbrush::implementation(Ownable)]
 #[openbrush::contract]
 pub mod single_asset_reward {
-    use kudos_ink::traits::workflow::{*, WorkflowError};
+    use kudos_ink::traits::workflow::{WorkflowError, *};
     use openbrush::{contracts::traits::ownable::OwnableError, modifiers, traits::Storage};
 
     use ink::env::hash::{HashOutput, Sha2x256};
@@ -18,9 +18,11 @@ pub mod single_asset_reward {
         derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
     )]
     pub struct Contribution {
+        // The unique contribution ID (e.g. the Github issue #id).
         id: u64,
+        // The contributor public key (e.g. extract from the `identities` mapping).
         contributor: AccountId,
-        is_claimed: bool,
+        is_reward_claimed: bool,
     }
 
     #[ink(storage)]
@@ -30,37 +32,31 @@ pub mod single_asset_reward {
         ownable: ownable::Data,
 
         // The registered workflow.
+        // It is usually represented with the SHA hash of the workflow file (e.g. Github Workflow file).
         workflow: HashValue,
 
-        // The contribution reward amount
+        // The contribution reward amount.
         reward: Balance,
 
-        // The approved contribution ids database.
-        contributions: Mapping<u64, Contribution>,
+        // The approved `Contribution`.
+        contribution: Option<Contribution>,
 
         // The registered contributors ids database.
+        // The key refers to a registered and unique contribution ID (e.g. the Github issue #id).
+        // The value is the associated registered `AccountId` (public key) of the contributor.
         identities: Mapping<HashValue, AccountId>, // HashValue refers to the contributo id (e.g. github ID)
     }
 
     impl Workflow for SingleAssetReward {
-/// Register an aspiring contributor.
+        /// Register the caller as an aspiring contributor.
         ///
         /// Constraint(s):
         /// 1. The `identity` id should not already be registered.
         ///
         /// A `Registered` event is emitted.
         #[ink(message)]
-        fn register_identity(
-            &mut self,
-            account: AccountId,
-            identity: HashValue,
-        ) -> Result<(), WorkflowError> {
-            if self.identity_is_known(identity) {
-                return Err(WorkflowError::IdentityAlreadyRegistered);
-            }
-
-            self.identities.insert(identity, &account);
-            Ok(())
+        fn register_identity(&mut self, identity: HashValue) -> Result<(), WorkflowError> {
+            self.register_identity(identity)
         }
 
         /// Approve contribution. This is triggered by a workflow run.
@@ -77,35 +73,44 @@ pub mod single_asset_reward {
             contribution_id: u64,
             contributor_identity: HashValue,
         ) -> Result<(), WorkflowError> {
-            if self.contribution_is_known(contribution_id) {
+            if self.contribution.is_some() {
                 return Err(WorkflowError::ContributionAlreadyApproved);
             }
 
-            let maybe_contributor = self.identities.get(contributor_identity);
-            if maybe_contributor.is_none() {
-                return Err(WorkflowError::UnknownContributor);
-            }
+            let contributor = match self.identities.get(contributor_identity) {
+                Some(contributor) => contributor,
+                None => {return Err(WorkflowError::UnknownContributor)}
+            };
 
             let contribution = Contribution {
                 id: contribution_id,
-                contributor: maybe_contributor.unwrap(),
-                is_claimed: false,
+                contributor,
+                is_reward_claimed: false,
             };
-            self.contributions.insert(contribution_id, &contribution);
+            self.contribution = Some(contribution);
             Ok(())
         }
 
-        /// Claim reward for a contributor.
+        /// Check the ability to claim for a given `contribution_id`.
         ///
         /// Constraint(s):
-        /// 1. The `contribution_id` must be mapped to an existing approved contribution in `contributions`.
-        /// 2. The caller has to be the contributor of the approved contribution.
-        /// 3. The claim must be available (marked as false in the claims mapping).
+        /// 1. A `contribution` must be approved.
+        /// 2. The `contribution_id` must be the same as the one in the approved `contribution`.
+        /// 3. The caller has to be the contributor of the approved `contribution`.
+        /// 4. The claim must be available (marked as false in the claims mapping).
+        #[ink(message)]
+        fn can_claim(&self, contribution_id: u64) -> Result<bool, WorkflowError> {
+            self.can_claim(contribution_id)
+        }
+
+        /// Claim reward for a given `contribution_id`.
+        ///
+        /// Constraint(s): Ensure `can_claim`.
         ///
         /// A `Claim` event is emitted.
         #[ink(message)]
-        fn claim(&self, contribution_id: u64) -> Result<bool, WorkflowError> {
-            self.claim_reward(contribution_id)
+        fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
+            self.claim(contribution_id)
         }
     }
 
@@ -123,53 +128,91 @@ pub mod single_asset_reward {
             }
         }
 
-        /// Claim reward for a contributor.
-        ///
-        /// Constraint(s):
-        /// 1. The `contribution_id` must be mapped to an existing approved contribution in `contributions`.
-        /// 2. The caller has to be the contributor of the approved contribution.
-        /// 3. The claim must be available (marked as false in the claims mapping).
-        ///
-        /// A `Claim` event is emitted.
+        /// Register the caller as an aspiring contributor.
         #[ink(message)]
-        pub fn claim_reward(&self, contribution_id: u64) -> Result<bool, WorkflowError> {
-            if !self.contribution_is_known(contribution_id) {
-                return Err(WorkflowError::UnknownContribution);
+        pub fn register_identity(&mut self, identity: HashValue) -> Result<(), WorkflowError> {
+            if self.identity_is_known(identity) {
+                return Err(WorkflowError::IdentityAlreadyRegistered);
             }
 
-            let contribution = self.contributions.get(contribution_id).unwrap();
-            let contributor = contribution.contributor;
-            if Self::env().caller() != contributor {
-                return Err(WorkflowError::CallerIsNotContributor);
-            }
-
-            if contribution.is_claimed {
-                return Err(WorkflowError::AlreadyClaimed);
-            }
-
-            match self.env().transfer(contributor, self.reward) {
-                Ok(_) => Ok(true),
-                Err(_) => Err(WorkflowError::PaymentFailed),
-            }
+            let caller = Self::env().caller();
+            self.identities.insert(identity, &caller);
+            Ok(())
         }
 
-        /// Simply returns the current workflow.
+        /// Check the ability to claim for a given `contribution_id`.
+        #[ink(message)]
+        pub fn can_claim(&self, contribution_id: u64) -> Result<bool, WorkflowError> {
+            self.ensure_can_claim(contribution_id)?;
+
+            Ok(true)
+        }
+
+        /// Claim reward for a given `contribution_id`.
+        #[ink(message)]
+        pub fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
+            self.ensure_can_claim(contribution_id)?;
+
+            let contribution = self.contribution.unwrap();
+
+            // Perform the reward claim
+            if let Err(_) = self.env().transfer(contribution.contributor, self.reward) {
+                return Err(WorkflowError::PaymentFailed);
+            }
+
+            Ok(())
+        }
+
+        /// Simply returns the workflow hash.
+        #[ink(message)]
+        pub fn get_workflow(&self) -> HashValue {
+            self.workflow
+        }
+
+        /// Simply returns the reward amount.
         #[ink(message)]
         pub fn get_reward(&self) -> Balance {
             self.reward
         }
 
-        /// A helper function to detect whether a contribution exists in the storage
-        pub fn contribution_is_known(&self, contribution_id: u64) -> bool {
-            self.contributions.get(contribution_id).is_some()
+        /// Simply returns the aprroved `contribution` if some.
+        #[ink(message)]
+        pub fn get_contribution(&self) -> Option<Contribution> {
+            self.contribution
         }
 
-        /// A helper function to detect whether an aspiring contributor identity has been registered in the storage
+        /// A helper function to ensure a contributor can claim the reward.
+        pub fn ensure_can_claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
+            // Check if a contribution is set
+            let contribution = match &self.contribution {
+                Some(contribution) => contribution,
+                None => return Err(WorkflowError::NoContributionApprovedYet),
+            };
+
+            // Verify the contribution ID
+            if contribution_id != contribution.id {
+                return Err(WorkflowError::UnknownContribution);
+            }
+
+            // Verify the caller is the contributor
+            if Self::env().caller() != contribution.contributor {
+                return Err(WorkflowError::CallerIsNotContributor);
+            }
+
+            // Check if the reward has already been claimed
+            if contribution.is_reward_claimed {
+                return Err(WorkflowError::AlreadyClaimed);
+            }
+
+            Ok(())
+        }
+
+        /// A helper function to detect whether an aspiring contributor identity has been registered in the storage.
         pub fn identity_is_known(&self, identity: HashValue) -> bool {
             self.identities.get(identity).is_some()
         }
 
-        /// A helper function to hash bytes (e.g. identities or workflow file sha)
+        /// A helper function to hash bytes (e.g. identities or workflow file sha).
         pub fn hash(input: &[u8]) -> HashValue {
             let mut hash_value = <Sha2x256 as HashOutput>::Type::default();
             ink::env::hash_bytes::<Sha2x256>(input, &mut hash_value);
