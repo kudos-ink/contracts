@@ -293,17 +293,16 @@ pub mod single_asset_reward {
             let mut contract = create_contract(10u128, 1u128);
             let contribution_id = 1u64;
             let identity = SingleAssetReward::hash("bobby".as_bytes());
-            let contributor = accounts.bob;
             set_next_caller(accounts.bob);
             assert_eq!(
-                contract.register_identity(contributor.clone(), identity),
+                contract.register_identity(identity),
                 Ok(())
             );
             set_next_caller(accounts.alice);
             assert_eq!(contract.approve(contribution_id, identity), Ok(()));
             let bob_initial_balance = get_balance(accounts.bob);
             set_next_caller(accounts.bob);
-            assert_eq!(contract.claim(contribution_id), Ok(true));
+            assert_eq!(contract.claim(contribution_id), Ok(()));
             assert_eq!(
                 get_balance(accounts.bob),
                 bob_initial_balance + contract.reward
