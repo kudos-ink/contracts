@@ -47,13 +47,35 @@ pub mod single_asset_reward {
         identities: Mapping<HashValue, AccountId>, // HashValue refers to the contributo id (e.g. github ID)
     }
 
+    /// Emitted when an `identity` is registered by an aspiring contributor.
+    #[ink(event)]
+    pub struct IdentityRegistered {
+        identity: HashValue,
+        caller: AccountId,
+    }
+
+    /// Emitted when a `contribution` is approved.
+    #[ink(event)]
+    pub struct ContributionApproval {
+        id: u64,
+        contributor: AccountId,
+    }
+
+    /// Emitted when the reward associated with the `contribution` is claimed.
+    #[ink(event)]
+    pub struct RewardClaimed {
+        contribution_id: u64,
+        contributor: AccountId,
+        reward: Balance,
+    }
+
     impl Workflow for SingleAssetReward {
         /// Register the caller as an aspiring contributor.
         ///
         /// Constraint(s):
         /// 1. The `identity` id should not already be registered.
         ///
-        /// A `Registered` event is emitted.
+        /// A `IdentityRegistered` event is emitted.
         #[ink(message)]
         fn register_identity(&mut self, identity: HashValue) -> Result<(), WorkflowError> {
             self.register_identity(identity)
@@ -65,7 +87,7 @@ pub mod single_asset_reward {
         /// 1. The `contribution_id` should not already be approved.
         /// 2. The `contributor_identity` must be registered.
         ///
-        /// An `Approval` event is emitted.
+        /// An `ContributionApproval` event is emitted.
         #[ink(message)]
         #[modifiers(only_owner)]
         fn approve(
@@ -73,22 +95,7 @@ pub mod single_asset_reward {
             contribution_id: u64,
             contributor_identity: HashValue,
         ) -> Result<(), WorkflowError> {
-            if self.contribution.is_some() {
-                return Err(WorkflowError::ContributionAlreadyApproved);
-            }
-
-            let contributor = match self.identities.get(contributor_identity) {
-                Some(contributor) => contributor,
-                None => {return Err(WorkflowError::UnknownContributor)}
-            };
-
-            let contribution = Contribution {
-                id: contribution_id,
-                contributor,
-                is_reward_claimed: false,
-            };
-            self.contribution = Some(contribution);
-            Ok(())
+            self.approve(contribution_id, contributor_identity)
         }
 
         /// Check the ability to claim for a given `contribution_id`.
@@ -107,7 +114,7 @@ pub mod single_asset_reward {
         ///
         /// Constraint(s): Ensure `can_claim`.
         ///
-        /// A `Claim` event is emitted.
+        /// A `RewardClaimed` event is emitted.
         #[ink(message)]
         fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
             self.claim(contribution_id)
@@ -137,6 +144,42 @@ pub mod single_asset_reward {
 
             let caller = Self::env().caller();
             self.identities.insert(identity, &caller);
+
+            self.env()
+                .emit_event(IdentityRegistered { identity, caller });
+
+            Ok(())
+        }
+
+        /// Approve contribution. This is triggered by a workflow run.
+        #[ink(message)]
+        #[modifiers(only_owner)]
+        pub fn approve(
+            &mut self,
+            contribution_id: u64,
+            contributor_identity: HashValue,
+        ) -> Result<(), WorkflowError> {
+            if self.contribution.is_some() {
+                return Err(WorkflowError::ContributionAlreadyApproved);
+            }
+
+            let contributor = match self.identities.get(contributor_identity) {
+                Some(contributor) => contributor,
+                None => return Err(WorkflowError::UnknownContributor),
+            };
+
+            let contribution = Contribution {
+                id: contribution_id,
+                contributor,
+                is_reward_claimed: false,
+            };
+            self.contribution = Some(contribution);
+
+            self.env().emit_event(ContributionApproval {
+                id: contribution_id,
+                contributor,
+            });
+
             Ok(())
         }
 
@@ -153,12 +196,18 @@ pub mod single_asset_reward {
         pub fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
             self.ensure_can_claim(contribution_id)?;
 
-            let contribution = self.contribution.unwrap();
+            let contribution = self.contribution.unwrap(); // ensure in `ensure_can_claim`
 
             // Perform the reward claim
             if let Err(_) = self.env().transfer(contribution.contributor, self.reward) {
                 return Err(WorkflowError::PaymentFailed);
             }
+
+            self.env().emit_event(RewardClaimed {
+                contribution_id,
+                contributor: contribution.contributor,
+                reward: self.reward,
+            });
 
             Ok(())
         }
