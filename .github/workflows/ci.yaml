@@ -5,7 +5,7 @@ on:
     branches: ['**']
 
 env:
-  SINGLE_ASSET_REWARD: "--manifest-path=src/single_asset_reward/Cargo.toml"
+  SINGLE_ASSET_REWARD: "--manifest-path=src/contracts/single_asset_reward/Cargo.toml"
 
 jobs:
   build:
