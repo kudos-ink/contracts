@@ -4,7 +4,7 @@
 #[openbrush::contract]
 pub mod single_asset_reward {
     use kudos_ink::traits::workflow::{WorkflowError, *};
-    use openbrush::{contracts::traits::ownable::OwnableError, modifiers, traits::Storage};
+    use openbrush::{modifiers, traits::Storage};
 
     use ink::env::hash::{HashOutput, Sha2x256};
     use ink::storage::Mapping;
@@ -116,7 +116,7 @@ pub mod single_asset_reward {
         ///
         /// A `RewardClaimed` event is emitted.
         #[ink(message)]
-        fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
+        fn claim(&mut self, contribution_id: u64) -> Result<(), WorkflowError> {
             self.claim(contribution_id)
         }
     }
@@ -163,7 +163,7 @@ pub mod single_asset_reward {
                 return Err(WorkflowError::ContributionAlreadyApproved);
             }
 
-            let contributor = match self.identities.get(contributor_identity) {
+            let contributor = match self.get_account(contributor_identity) {
                 Some(contributor) => contributor,
                 None => return Err(WorkflowError::UnknownContributor),
             };
@@ -193,13 +193,18 @@ pub mod single_asset_reward {
 
         /// Claim reward for a given `contribution_id`.
         #[ink(message)]
-        pub fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError> {
+        pub fn claim(&mut self, contribution_id: u64) -> Result<(), WorkflowError> {
             let contribution = self.ensure_can_claim(contribution_id)?;
 
             // Perform the reward claim
             if self.env().transfer(contribution.contributor, self.reward).is_err() {
                 return Err(WorkflowError::PaymentFailed);
             }
+
+            self.contribution = Some(Contribution {
+                is_reward_claimed: true,
+                ..contribution
+            });
 
             self.env().emit_event(RewardClaimed {
                 contribution_id,
@@ -226,6 +231,12 @@ pub mod single_asset_reward {
         #[ink(message)]
         pub fn get_contribution(&self) -> Option<Contribution> {
             self.contribution
+        }
+
+        /// Simply returns the `AccountId` of a given identity.
+        #[ink(message)]
+        pub fn get_account(&self, identity: HashValue) -> Option<AccountId> {
+            self.identities.get(identity)
         }
 
         /// A helper function to ensure a contributor can claim the reward.
@@ -279,35 +290,274 @@ pub mod single_asset_reward {
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
+        use ink::env::test::EmittedEvent;
+        type Event = <SingleAssetReward as ::ink::reflect::ContractEventBase>::Type;
+
         /// We test if the constructor does its job.
         #[ink::test]
         fn new_works() {
             let contract = create_contract(1u128, 1u128);
+            assert_eq!(contract.get_workflow(), [0; 32]);
             assert_eq!(contract.get_reward(), 1u128);
+            assert_eq!(contract.get_contribution(), None);
         }
 
-        /// We test if a reward for an approved contribution can be claimed from the contributor
+        #[ink::test]
+        fn register_identity_works() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let bob_identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            assert_eq!(
+                contract.register_identity(bob_identity),
+                Ok(())
+            );
+
+            // Validate `IdentityRegistered` event emition
+            let emitted_events = ink::env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let decoded_events = decode_events(emitted_events);
+            if let Event::IdentityRegistered(IdentityRegistered { identity, caller }) = decoded_events[0] {
+                assert_eq!(identity, bob_identity);
+                assert_eq!(caller, accounts.bob);
+            } else {
+                panic!("encountered unexpected event kind: expected a IdentityRegistered event")
+            }
+
+            let maybe_account = contract.get_account(bob_identity);
+            assert_eq!(
+                maybe_account,
+                Some(accounts.bob)
+            );
+        }
+
+        #[ink::test]
+        fn already_registered_identity_fails() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+            assert_eq!(
+                contract.register_identity(identity),
+                Err(WorkflowError::IdentityAlreadyRegistered)
+            );
+        }
+
+        #[ink::test]
+        fn approve_works() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            assert_eq!(
+                contract.approve(contribution_id, identity),
+                Ok(())
+            );
+
+            // Validate `ContributionApproval` event emition
+            let emitted_events = ink::env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(2, emitted_events.len());
+            let decoded_events = decode_events(emitted_events);
+            if let Event::ContributionApproval(ContributionApproval { id, contributor }) = decoded_events[1] {
+                assert_eq!(id, contribution_id);
+                assert_eq!(contributor, accounts.bob);
+            } else {
+                panic!("encountered unexpected event kind: expected a ContributionApproval event")
+            }
+
+            let maybe_contribution = contract.get_contribution();
+            assert_eq!(
+                maybe_contribution,
+                Some(Contribution {id: contribution_id, contributor: accounts.bob, is_reward_claimed: false})
+            );
+        }
+
+        #[ink::test]
+        fn only_contract_owner_can_approve() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            assert_eq!(
+                contract.approve(contribution_id, identity),
+                Err(WorkflowError::OwnableError(OwnableError::CallerIsNotOwner))
+            );
+        }
+
+        #[ink::test]
+        fn already_approved_contribution_fails() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            let identity2 = SingleAssetReward::hash("bobby2".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            let _ = contract.approve(contribution_id, identity);
+
+            assert_eq!(
+                contract.approve(contribution_id, identity2),
+                Err(WorkflowError::ContributionAlreadyApproved)
+            );
+        }
+
+        #[ink::test]
+        fn approve_unknown_contributor_identity_fails() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            let identity2 = SingleAssetReward::hash("bobby2".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            assert_eq!(
+                contract.approve(contribution_id, identity2),
+                Err(WorkflowError::UnknownContributor)
+            );
+        }
+
+        #[ink::test]
+        fn can_claim_works() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            let _ = contract.approve(contribution_id, identity);
+            
+            set_next_caller(accounts.bob);
+            assert_eq!(
+                contract.can_claim(contribution_id),
+                Ok(true)
+            );
+        }
+
         #[ink::test]
         fn claim_works() {
             let accounts = default_accounts();
-            let mut contract = create_contract(10u128, 1u128);
-            let contribution_id = 1u64;
+            let single_reward = 1u128;
+            let mut contract = create_contract(1u128, single_reward);
             let identity = SingleAssetReward::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
-            assert_eq!(
-                contract.register_identity(identity),
-                Ok(())
-            );
+            let _ = contract.register_identity(identity);
+
+            let issue_id = 1u64;
             set_next_caller(accounts.alice);
-            assert_eq!(contract.approve(contribution_id, identity), Ok(()));
+            let _ = contract.approve(issue_id, identity);
+            
             let bob_initial_balance = get_balance(accounts.bob);
             set_next_caller(accounts.bob);
-            assert_eq!(contract.claim(contribution_id), Ok(()));
+            assert_eq!(contract.claim(issue_id), Ok(()));
             assert_eq!(
                 get_balance(accounts.bob),
                 bob_initial_balance + contract.reward
             );
+
+            let maybe_contribution = contract.get_contribution();
+            assert_eq!(
+                maybe_contribution,
+                Some(Contribution {id: issue_id, contributor: accounts.bob, is_reward_claimed: true})
+            );
+
+            // Validate `RewardClaimed` event emition
+            let emitted_events = ink::env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(3, emitted_events.len());
+            let decoded_events = decode_events(emitted_events);
+            if let Event::RewardClaimed(RewardClaimed { contribution_id, contributor, reward }) = decoded_events[2] {
+                assert_eq!(contribution_id, issue_id);
+                assert_eq!(contributor, accounts.bob);
+                assert_eq!(reward, single_reward);
+            } else {
+                panic!("encountered unexpected event kind: expected a RewardClaimed event")
+            }
         }
+
+        #[ink::test]
+        fn cannot_claim_non_approved_contribution() {
+            let accounts = default_accounts();
+            let contract = create_contract(1u128, 1u128);
+            set_next_caller(accounts.bob);
+
+            let contribution_id = 1u64;
+            assert_eq!(
+                contract.can_claim(contribution_id),
+                Err(WorkflowError::NoContributionApprovedYet)
+            );
+        }
+
+        #[ink::test]
+        fn cannot_claim_unknown_contribution() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            let _ = contract.approve(contribution_id, identity);
+
+            set_next_caller(accounts.bob);
+            assert_eq!(
+                contract.can_claim(2u64),
+                Err(WorkflowError::UnknownContribution)
+            );
+        }
+
+        #[ink::test]
+        fn cannot_claim_if_not_contributor() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.eve);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            let _ = contract.approve(contribution_id, identity);
+
+            set_next_caller(accounts.bob);
+            assert_eq!(
+                contract.can_claim(contribution_id),
+                Err(WorkflowError::CallerIsNotContributor)
+            );
+        }
+
+        #[ink::test]
+        fn cannot_claim_already_claimed_reward() {
+            let accounts = default_accounts();
+            let mut contract = create_contract(1u128, 1u128);
+            let identity = SingleAssetReward::hash("bobby".as_bytes());
+            set_next_caller(accounts.bob);
+            let _ = contract.register_identity(identity);
+
+            let contribution_id = 1u64;
+            set_next_caller(accounts.alice);
+            let _ = contract.approve(contribution_id, identity);
+
+            set_next_caller(accounts.bob);
+            let _ = contract.claim(contribution_id);
+            assert_eq!(
+                contract.can_claim(contribution_id),
+                Err(WorkflowError::AlreadyClaimed)
+            );
+        }
+
 
         fn default_accounts() -> ink::env::test::DefaultAccounts<ink::env::DefaultEnvironment> {
             ink::env::test::default_accounts::<Environment>()
@@ -338,6 +588,15 @@ pub mod single_asset_reward {
             set_next_caller(accounts.alice);
             set_balance(contract_id(), initial_balance);
             SingleAssetReward::new([0; 32], reward)
+        }
+
+        fn decode_events(emittend_events: Vec<EmittedEvent>) -> Vec<Event> {
+            emittend_events
+                .into_iter()
+                .map(|event| {
+                    <Event as scale::Decode>::decode(&mut &event.data[..]).expect("invalid data")
+                })
+                .collect()
         }
     }
 }

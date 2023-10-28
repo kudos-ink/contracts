@@ -29,7 +29,7 @@ pub trait Workflow: Ownable {
 
     /// Claim reward for a given `contribution_id`.
     #[ink(message)]
-    fn claim(&self, contribution_id: u64) -> Result<(), WorkflowError>;
+    fn claim(&mut self, contribution_id: u64) -> Result<(), WorkflowError>;
 }
 
 /// Errors that can occur upon calling this contract.
