@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/token/single"]
+members = ["src/token/single-token"]
 
 [package]
 name = "kudos_ink_contracts"

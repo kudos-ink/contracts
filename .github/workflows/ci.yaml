@@ -5,7 +5,7 @@ on:
     branches: ['**']
 
 env:
-  SINGLE_TOKEN: "--manifest-path=contracts/src/token/single/Cargo.toml"
+  SINGLE_TOKEN: "--manifest-path=contracts/src/token/single-token/Cargo.toml"
 
 jobs:
   build:
