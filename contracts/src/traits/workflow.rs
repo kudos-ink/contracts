@@ -1,7 +1,5 @@
 use openbrush::{contracts::traits::ownable::*, modifiers};
 
-#[cfg(feature = "std")]
-
 /// Type alias for hashes.
 pub type HashValue = [u8; 32];
 

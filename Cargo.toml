@@ -4,6 +4,14 @@ version= "0.1.0"
 authors = ["Igor Papandinas", "Leandro Palazzolo"]
 edition = "2021"
 
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/kudos-ink/contracts"
+description = "Kudos Ink smart contracts for automated contribution rewards."
+keywords = ["wasm", "smart-contracts", "blockchain", "ink"]
+categories = ["no-std", "embedded"]
+include = ["Cargo.toml", "src/**/*.rs"]
+
 [dependencies]
 ink = { version = "4.3.0", default-features = false }
 
@@ -13,9 +21,12 @@ scale-info = { version = "2.6", default-features = false, features = ["derive"],
 # OpenBrush dependency
 openbrush = { git = "https://github.com/Brushfam/openbrush-contracts", version = "4.0.0-beta", default-features = false, features = ["ownable"] }
 
+# These dependencies
+kudos_ink_contracts = { path = "contracts", default-features = false }
+
 [lib]
 name = "kudos_ink"
-path = "lib.rs"
+path = "src/lib.rs"
 crate-type = [
     "rlib",
 ]
