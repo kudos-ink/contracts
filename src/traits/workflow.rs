@@ -1,9 +1,8 @@
 use openbrush::{contracts::traits::ownable::*, modifiers};
+use super::types::HashValue;
 
 #[cfg(feature = "std")]
 
-/// Type alias for hashes.
-pub type HashValue = [u8; 32];
 
 #[openbrush::wrapper]
 pub type WorkflowdRef = dyn Workflow + Ownable;
