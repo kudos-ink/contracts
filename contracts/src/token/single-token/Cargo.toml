@@ -13,7 +13,7 @@ scale-info = { version = "2.6", default-features = false, features = ["derive"],
 openbrush = { git = "https://github.com/Brushfam/openbrush-contracts", version = "4.0.0-beta", default-features = false, features = ["ownable"] }
 
 # These dependencies
-kudos_ink_contracts = { git = "https://github.com/kudos-ink/contracts" }
+kudos_ink_contracts = { git = "https://github.com/kudos-ink/contracts", default-features = false }
 
 [lib]
 name = "single_token_contract"
