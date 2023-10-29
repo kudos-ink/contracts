@@ -4,6 +4,7 @@
 #[openbrush::contract]
 pub mod single_asset_reward {
     use kudos_ink::traits::workflow::{WorkflowError, *};
+    use kudos_ink::traits::types::HashValue;
     use openbrush::{modifiers, traits::Storage};
 
     use ink::env::hash::{HashOutput, Sha2x256};
