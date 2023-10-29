@@ -1,5 +1,5 @@
 [package]
-name = "single_asset_reward"
+name = "single_token_contract"
 version = "0.1.0"
 authors = ["Igor Papandinas", "Leandro Palazzolo"]
 edition = "2021"
@@ -13,10 +13,10 @@ scale-info = { version = "2.6", default-features = false, features = ["derive"],
 openbrush = { git = "https://github.com/Brushfam/openbrush-contracts", version = "4.0.0-beta", default-features = false, features = ["ownable"] }
 
 # These dependencies
-kudos_ink = { path = "../..", default-features = false }
+kudos_ink_contracts = { git = "https://github.com/kudos-ink/contracts" }
 
 [lib]
-name = "single_asset_reward"
+name = "single_token_contract"
 path = "lib.rs"
 
 [features]
@@ -27,6 +27,6 @@ std = [
     "scale-info/std",
     # OpenBrush dependency
     "openbrush/std",
-    "kudos_ink/std",
+    "kudos_ink_contracts/std",
 ]
 ink-as-dependency = []

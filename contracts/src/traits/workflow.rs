@@ -1,9 +1,6 @@
 use openbrush::{contracts::traits::ownable::*, modifiers};
 use super::types::HashValue;
 
-#[cfg(feature = "std")]
-
-
 #[openbrush::wrapper]
 pub type WorkflowdRef = dyn Workflow + Ownable;
 

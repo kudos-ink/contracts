@@ -1,8 +1,19 @@
+[workspace]
+members = ["src/token/single-token"]
+
 [package]
-name = "kudos_ink"
+name = "kudos_ink_contracts"
 version= "0.1.0"
 authors = ["Igor Papandinas", "Leandro Palazzolo"]
 edition = "2021"
+
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/kudos-ink/contracts"
+description = "Reusable implementations of reward contracts and traits."
+keywords = ["wasm", "smart-contracts", "blockchain", "ink"]
+categories = ["no-std", "embedded"]
+include = ["Cargo.toml", "src/**/*.rs"]
 
 [dependencies]
 ink = { version = "4.3.0", default-features = false }
@@ -14,8 +25,8 @@ scale-info = { version = "2.6", default-features = false, features = ["derive"],
 openbrush = { git = "https://github.com/Brushfam/openbrush-contracts", version = "4.0.0-beta", default-features = false, features = ["ownable"] }
 
 [lib]
-name = "kudos_ink"
-path = "lib.rs"
+name = "kudos_ink_contracts"
+path = "src/lib.rs"
 crate-type = [
     "rlib",
 ]
@@ -29,3 +40,4 @@ std = [
     # OpenBrush dependency
     "openbrush/std",
 ]
+single = []
