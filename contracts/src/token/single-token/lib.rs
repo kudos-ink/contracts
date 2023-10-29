@@ -4,6 +4,7 @@
 #[openbrush::contract]
 pub mod single_token {
     use kudos_ink_contracts::traits::workflow::{WorkflowError, *};
+    use kudos_ink_contracts::traits::types::HashValue;
     use openbrush::{modifiers, traits::Storage};
 
     use ink::env::hash::{HashOutput, Sha2x256};
