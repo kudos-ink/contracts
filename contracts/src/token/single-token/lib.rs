@@ -125,15 +125,22 @@ pub mod single_token {
     impl SingleToken {
         /// Constructor that initializes an asset reward for a given workflow
         #[ink(constructor)]
-        pub fn new(workflow: HashValue, reward: Balance) -> Self {
+        pub fn new(workflow: HashValue) -> Self {
             let mut instance = Self::default();
             let caller = instance.env().caller();
             ownable::Internal::_init_with_owner(&mut instance, caller);
             Self {
                 workflow,
-                reward,
+                reward: 0,
                 ..instance
             }
+        }
+
+        /// Set the reward
+        #[ink(message, payable)]
+        pub fn set_reward(&mut self) -> Result<(), WorkflowError> {
+            self.reward = self.env().transferred_value();
+            Ok(())
         }
 
         /// Register the caller as an aspiring contributor.
@@ -297,7 +304,7 @@ pub mod single_token {
         /// We test if the constructor does its job.
         #[ink::test]
         fn new_works() {
-            let contract = create_contract(1u128, 1u128);
+            let contract = create_contract(1u128);
             assert_eq!(contract.get_workflow(), [0; 32]);
             assert_eq!(contract.get_reward(), 1u128);
             assert_eq!(contract.get_contribution(), None);
@@ -306,7 +313,7 @@ pub mod single_token {
         #[ink::test]
         fn register_identity_works() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let bob_identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             assert_eq!(
@@ -335,7 +342,7 @@ pub mod single_token {
         #[ink::test]
         fn already_registered_identity_fails() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -348,7 +355,7 @@ pub mod single_token {
         #[ink::test]
         fn approve_works() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -381,7 +388,7 @@ pub mod single_token {
         #[ink::test]
         fn only_contract_owner_can_approve() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -396,7 +403,7 @@ pub mod single_token {
         #[ink::test]
         fn already_approved_contribution_fails() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             let identity2 = SingleToken::hash("bobby2".as_bytes());
             set_next_caller(accounts.bob);
@@ -415,7 +422,7 @@ pub mod single_token {
         #[ink::test]
         fn approve_unknown_contributor_identity_fails() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             let identity2 = SingleToken::hash("bobby2".as_bytes());
             set_next_caller(accounts.bob);
@@ -432,7 +439,7 @@ pub mod single_token {
         #[ink::test]
         fn can_claim_works() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -452,7 +459,7 @@ pub mod single_token {
         fn claim_works() {
             let accounts = default_accounts();
             let single_reward = 1u128;
-            let mut contract = create_contract(1u128, single_reward);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -491,7 +498,7 @@ pub mod single_token {
         #[ink::test]
         fn cannot_claim_non_approved_contribution() {
             let accounts = default_accounts();
-            let contract = create_contract(1u128, 1u128);
+            let contract = create_contract(1u128);
             set_next_caller(accounts.bob);
 
             let contribution_id = 1u64;
@@ -504,7 +511,7 @@ pub mod single_token {
         #[ink::test]
         fn cannot_claim_unknown_contribution() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -523,7 +530,7 @@ pub mod single_token {
         #[ink::test]
         fn cannot_claim_if_not_contributor() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.eve);
             let _ = contract.register_identity(identity);
@@ -542,7 +549,7 @@ pub mod single_token {
         #[ink::test]
         fn cannot_claim_already_claimed_reward() {
             let accounts = default_accounts();
-            let mut contract = create_contract(1u128, 1u128);
+            let mut contract = create_contract(1u128);
             let identity = SingleToken::hash("bobby".as_bytes());
             set_next_caller(accounts.bob);
             let _ = contract.register_identity(identity);
@@ -584,11 +591,13 @@ pub mod single_token {
         /// Creates a new instance of `SingleToken` with `initial_balance`.
         ///
         /// Returns the `contract_instance`.
-        fn create_contract(initial_balance: Balance, reward: Balance) -> SingleToken {
+        fn create_contract(initial_balance: Balance) -> SingleToken {
             let accounts = default_accounts();
             set_next_caller(accounts.alice);
             set_balance(contract_id(), initial_balance);
-            SingleToken::new([0; 32], reward)
+            let mut single_token = SingleToken::new([0; 32]);
+            ink::env::pay_with_call!(single_token.set_reward(), 1);
+            single_token
         }
 
         fn decode_events(emittend_events: Vec<EmittedEvent>) -> Vec<Event> {
